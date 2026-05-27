@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT StockManager Pro - Gestión Integral de Activos Pyme</title>
+    <meta name="description" content="Sistema empresarial premium para el control de stock, asignaciones y firmas de activos de IT.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i data-lucide="layers"></i>
+                </div>
+                <div class="logo-text">
+                    <span class="logo-title">ITAsset Pro</span>
+                    <span class="logo-subtitle">SME Solutions</span>
+                </div>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" id="btn-nav-dashboard" onclick="switchTab('dashboard')">
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" id="btn-nav-inventory" onclick="switchTab('inventory')">
+                    <i data-lucide="database"></i>
+                    <span>Inventario Total</span>
+                </a>
+                <a href="#" class="nav-item" id="btn-nav-history" onclick="switchTab('history')">
+                    <i data-lucide="history"></i>
+                    <span>Historial / Auditoría</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="user-avatar">IT</div>
+                    <div class="user-info">
+                        <span class="user-name">Administrador Pyme</span>
+                        <span class="user-role">Gestión de Activos</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Header -->
+            <header class="top-header">
+                <div class="search-bar-container">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="global-search" placeholder="Buscar por modelo, número de serie o empleado..." oninput="handleSearch(this.value)">
+                </div>
+                <div class="header-actions">
+                    <div class="system-time" id="system-time">
+                        <i data-lucide="clock"></i>
+                        <span id="time-display">--:--:--</span>
+                    </div>
+                    <button class="btn btn-secondary btn-icon-only" onclick="exportData()" title="Copia de Seguridad Completa (JSON)">
+                        <i data-lucide="download"></i>
+                    </button>
+                    <button class="btn btn-primary" onclick="openNotebookModal()">
+                        <i data-lucide="plus"></i>
+                        <span>Añadir Activo</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Tab Content -->
+            <section id="tab-dashboard" class="tab-content active">
+                <div class="tab-header-title">
+                    <h1>Dashboard General de Activos</h1>
+                    <p class="tab-subtitle">Resumen consolidado de recursos, alertas administrativas y obsolescencia.</p>
+                </div>
+
+                <!-- KPI Metric Grid -->
+                <div class="kpi-grid">
+                    <div class="kpi-card purple">
+                        <div class="kpi-icon">
+                            <i data-lucide="package"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Activos Totales</span>
+                            <h3 class="kpi-value" id="kpi-total">0</h3>
+                            <span class="kpi-trend">En el inventario</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card green">
+                        <div class="kpi-icon">
+                            <i data-lucide="shield-check"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Disponibles</span>
+                            <h3 class="kpi-value" id="kpi-available">0</h3>
+                            <span class="kpi-trend text-green" id="kpi-available-pct">0% en stock</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card blue">
+                        <div class="kpi-icon">
+                            <i data-lucide="users"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Asignados</span>
+                            <h3 class="kpi-value" id="kpi-assigned">0</h3>
+                            <span class="kpi-trend text-blue" id="kpi-assigned-pct">0% en uso</span>
+                        </div>
+                    </div>
+                    <div class="kpi-card orange">
+                        <div class="kpi-icon">
+                            <i data-lucide="shield-alert"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Sin Firma</span>
+                            <h3 class="kpi-value" id="kpi-unsigned">0</h3>
+                            <span class="kpi-trend text-orange" id="kpi-unsigned-pct">Pendientes</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Critical Alerts Section -->
+                <div class="alerts-section-container" id="dashboard-critical-alerts">
+                    <!-- Loaded dynamically via app.js -->
+                </div>
+
+                <!-- Visual Charts Section -->
+                <div class="dashboard-charts">
+                    <div class="chart-card glass-panel">
+                        <div class="chart-header">
+                            <h3>Distribución por Categoría</h3>
+                            <i data-lucide="bar-chart-3"></i>
+                        </div>
+                        <div class="chart-body" id="category-distribution-chart">
+                            <div class="chart-placeholder-list" id="categories-list-chart">
+                                <!-- Loaded dynamically via app.js -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="chart-card glass-panel">
+                        <div class="chart-header">
+                            <h3>Movimientos Recientes</h3>
+                            <i data-lucide="activity"></i>
+                        </div>
+                        <div class="chart-body">
+                            <div class="recent-activities" id="recent-activities-container">
+                                <!-- Loaded dynamically via app.js -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Inventory Tab Content -->
+            <section id="tab-inventory" class="tab-content">
+                <div class="tab-header-title">
+                    <div class="title-with-actions">
+                        <div>
+                            <h1>Inventario de Activos</h1>
+                            <p class="tab-subtitle">Consola de administración para IT, mobiliario, redes e infraestructura.</p>
+                        </div>
+                        <div class="inventory-top-actions">
+                            <button class="btn btn-secondary" onclick="exportCSV()">
+                                <i data-lucide="file-spreadsheet"></i>
+                                <span>Exportar CSV</span>
+                            </button>
+                            <button class="btn btn-secondary btn-icon-only" onclick="document.getElementById('import-file-input').click()" title="Importar datos JSON">
+                                <i data-lucide="upload-cloud"></i>
+                            </button>
+                            <input type="file" id="import-file-input" style="display: none;" accept=".json" onchange="importData(event)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Filters Bar -->
+                <div class="filters-bar glass-panel">
+                    <div class="filter-group">
+                        <label for="filter-category">Categoría:</label>
+                        <select id="filter-category" onchange="handleCategoryFilterChange()">
+                            <option value="all">Todas las categorías</option>
+                            <option value="Tecnología e Informática">Tecnología e Informática</option>
+                            <option value="Componentes y Accesorios">Componentes y Accesorios</option>
+                            <option value="Redes y Conectividad">Redes y Conectividad</option>
+                            <option value="Mobiliario e Infraestructura">Mobiliario e Infraestructura</option>
+                            <option value="Electrodomésticos">Electrodomésticos</option>
+                            <option value="Herramientas">Herramientas</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-item-type">Tipo de Activo:</label>
+                        <select id="filter-item-type" onchange="applyFilters()">
+                            <option value="all">Todos los tipos</option>
+                            <!-- Dynamically loaded -->
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-status">Estado:</label>
+                        <select id="filter-status" onchange="applyFilters()">
+                            <option value="all">Todos los estados</option>
+                            <option value="Disponible">Disponible</option>
+                            <option value="Asignado">Asignado</option>
+                            <option value="En Mantenimiento">En Mantenimiento</option>
+                            <option value="Retirado">Retirado</option>
+                        </select>
+                    </div>
+                    <div class="filter-stats" id="filter-results-count">
+                        Mostrando 0 de 0 activos
+                    </div>
+                </div>
+
+                <!-- Inventory Table Card -->
+                <div class="table-container glass-panel">
+                    <table class="data-table" id="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Categoría / Tipo</th>
+                                <th>Marca / Modelo</th>
+                                <th>Número de Serie / ID</th>
+                                <th>Estado</th>
+                                <th>Asignación / Firma</th>
+                                <th>Ubicación / Trazabilidad</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-tbody">
+                            <!-- Dynamically populated via app.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- History Tab Content -->
+            <section id="tab-history" class="tab-content">
+                <div class="tab-header-title">
+                    <h1>Auditoría y Trazabilidad de Activos</h1>
+                    <p class="tab-subtitle">Historial cronológico de ingresos, asignaciones y novedades del inventario.</p>
+                </div>
+
+                <div class="history-controls glass-panel">
+                    <div class="search-bar-container compact">
+                        <i data-lucide="search" class="search-icon"></i>
+                        <input type="text" id="history-search" placeholder="Buscar por serie, modelo o empleado..." oninput="handleHistorySearch(this.value)">
+                    </div>
+                    <button class="btn btn-secondary" onclick="clearHistoryLog()">
+                        <i data-lucide="trash-2"></i>
+                        <span>Limpiar Historial</span>
+                    </button>
+                </div>
+
+                <div class="timeline-container glass-panel">
+                    <div class="timeline" id="history-timeline">
+                        <!-- Loaded dynamically via app.js -->
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- ADD/EDIT NOTEBOOK / ASSET MODAL -->
+    <div id="notebook-modal" class="modal-overlay">
+        <div class="modal-box glass-panel animated-modal" style="width: 600px;">
+            <div class="modal-header">
+                <h2 id="modal-title">Añadir Activo de Inventario</h2>
+                <button class="modal-close" onclick="closeNotebookModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <form id="notebook-form" onsubmit="saveNotebook(event)">
+                <input type="hidden" id="notebook-id">
+                
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label for="asset-category" class="required-field">Categoría</label>
+                        <select id="asset-category" required onchange="handleModalCategoryChange(this.value)">
+                            <option value="">-- Seleccionar --</option>
+                            <option value="Tecnología e Informática">Tecnología e Informática</option>
+                            <option value="Componentes y Accesorios">Componentes y Accesorios</option>
+                            <option value="Redes y Conectividad">Redes y Conectividad</option>
+                            <option value="Mobiliario e Infraestructura">Mobiliario e Infraestructura</option>
+                            <option value="Electrodomésticos">Electrodomésticos</option>
+                            <option value="Herramientas">Herramientas</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="asset-item-type" class="required-field">Tipo de Activo</label>
+                        <select id="asset-item-type" required onchange="handleModalItemTypeChange(this.value)">
+                            <option value="">-- Primero elija categoría --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label for="notebook-model" class="required-field">Marca / Modelo</label>
+                        <input type="text" id="notebook-model" placeholder="Ej. Lenovo V330 o Silla Ergonómica" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notebook-serial" class="required-field">Nº Serie / Código de Control</label>
+                        <input type="text" id="notebook-serial" placeholder="Ej. MP1XYZ89 o MOBI-001" required style="text-transform: uppercase;">
+                        <span class="error-msg" id="serial-error">El número de serie o código ya existe.</span>
+                    </div>
+                </div>
+
+                <div class="form-row-3">
+                    <div class="form-group">
+                        <label for="asset-purchase-date" class="required-field">Fecha de Compra</label>
+                        <input type="date" id="asset-purchase-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="asset-expiry-date" class="required-field">Fecha de Caducidad</label>
+                        <input type="date" id="asset-expiry-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="asset-purchase-price" class="required-field">Precio Referencia</label>
+                        <input type="number" id="asset-purchase-price" placeholder="Ej. 450" min="0" step="0.01" required>
+                    </div>
+                </div>
+
+                <div class="form-group" style="margin-top: 5px;">
+                    <label for="asset-receipt">Recibo de Compra (Imagen o PDF) - Opcional</label>
+                    <input type="file" id="asset-receipt" accept="image/*,application/pdf" onchange="handleReceiptUpload(event)">
+                    <div id="receipt-preview-container" class="receipt-preview-box hidden-section" style="display:flex; align-items:center; justify-content:between; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); padding:8px 12px; border-radius:var(--radius-sm); margin-top:8px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <i data-lucide="file-check" style="width:16px; height:16px; color:var(--success);"></i>
+                            <span id="receipt-preview-name" style="font-size:0.8rem; color:var(--text-primary); font-weight:500;">archivo.pdf</span>
+                        </div>
+                        <button type="button" class="btn-action delete" onclick="removeReceipt()" title="Quitar recibo" style="width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; margin-left:auto;">
+                            <i data-lucide="x" style="width:12px; height:12px;"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" id="asset-receipt-data">
+                    <input type="hidden" id="asset-receipt-filename">
+                </div>
+
+                <!-- Ownership block for water dispenser -->
+                <div id="ownership-fields" class="form-sub-section hidden-section">
+                    <h4>Régimen de Propiedad</h4>
+                    <div class="form-group">
+                        <label for="asset-ownership" class="required-field">Tipo de Dispenser</label>
+                        <select id="asset-ownership">
+                            <option value="">-- Seleccionar --</option>
+                            <option value="Propio">Propio</option>
+                            <option value="Alquilado">Alquilado</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="notebook-status">Estado del Activo</label>
+                    <select id="notebook-status" onchange="handleModalStatusChange(this.value)">
+                        <option value="Disponible">Disponible</option>
+                        <option value="Asignado">Asignado</option>
+                        <option value="En Mantenimiento">En Mantenimiento</option>
+                        <option value="Retirado">Retirado</option>
+                    </select>
+                </div>
+
+                <!-- Fields shown only if 'Asignado' status is chosen -->
+                <div id="assignment-fields" class="form-sub-section hidden-section">
+                    <h4>Información de Asignación y Ubicación</h4>
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="notebook-employee" class="required-field">Nombre de Asesor</label>
+                            <input type="text" id="notebook-employee" placeholder="Ej. Juan Pérez">
+                        </div>
+                        <div class="form-group">
+                            <label for="notebook-employee-id" class="required-field">Número de Legajo</label>
+                            <input type="text" id="notebook-employee-id" placeholder="Ej. LEG-9402">
+                        </div>
+                    </div>
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="notebook-location" class="required-field">Ubicación / Modalidad</label>
+                            <select id="notebook-location">
+                                <option value="Call Center">Call Center (Presencial)</option>
+                                <option value="Home Office">Home Office (Remoto)</option>
+                                <option value="Call Center / Home Office">Híbrido (Call Center / Home Office)</option>
+                            </select>
+                        </div>
+                        <!-- Signature paper check, only visible for Notebooks but can be displayed for generality -->
+                        <div class="form-group" id="signature-form-group">
+                            <label for="notebook-signature" class="required-field">¿Firmó papel de entrega?</label>
+                            <select id="notebook-signature">
+                                <option value="no">No, firma pendiente</option>
+                                <option value="si">Sí, documento firmado</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="notebook-notes">Observaciones / Notas</label>
+                    <textarea id="notebook-notes" placeholder="Detalles de estado, alquiler, número de contrato o mantenimiento..." rows="2"></textarea>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeNotebookModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="btn-save-submit">Guardar Activo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- QUICK ASSIGNMENT MODAL -->
+    <div id="assign-modal" class="modal-overlay">
+        <div class="modal-box glass-panel animated-modal">
+            <div class="modal-header">
+                <h2>Asignar Activo</h2>
+                <button class="modal-close" onclick="closeAssignModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="notebook-quick-summary glass-panel" id="assign-summary-box">
+                <!-- Summary details loaded dynamically -->
+            </div>
+            <form id="assign-form" onsubmit="confirmAssignment(event)">
+                <input type="hidden" id="assign-notebook-id">
+                <input type="hidden" id="assign-is-notebook">
+                
+                <div class="form-group">
+                    <label for="assign-employee" class="required-field">Nombre de Asesor / Empleado</label>
+                    <input type="text" id="assign-employee" placeholder="Ej. Juan Pérez" required>
+                </div>
+                <div class="form-group">
+                    <label for="assign-employee-id" class="required-field">Número de Legajo</label>
+                    <input type="text" id="assign-employee-id" placeholder="Ej. LEG-9402" required>
+                </div>
+                <div class="form-group">
+                    <label for="assign-location" class="required-field">Ubicación / Modalidad</label>
+                    <select id="assign-location" required>
+                        <option value="Call Center">Call Center (Presencial)</option>
+                        <option value="Home Office">Home Office (Remoto)</option>
+                        <option value="Call Center / Home Office">Híbrido (Call Center / Home Office)</option>
+                    </select>
+                </div>
+                <!-- Signature field shown dynamically for notebooks -->
+                <div class="form-group" id="assign-signature-wrapper">
+                    <label for="assign-signature" class="required-field">¿Firmó papel de entrega?</label>
+                    <select id="assign-signature" required>
+                        <option value="no">No, firma pendiente</option>
+                        <option value="si">Sí, documento firmado</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="assign-notes">Notas de Entrega</label>
+                    <textarea id="assign-notes" placeholder="Observaciones de entrega..." rows="2"></textarea>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeAssignModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar Asignación</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- GENERAL DIALOG (DETAILS VIEW) -->
+    <div id="details-modal" class="modal-overlay">
+        <div class="modal-box glass-panel animated-modal" style="width: 550px;">
+            <div class="modal-header">
+                <h2>Ficha Completa de Activo</h2>
+                <button class="modal-close" onclick="closeDetailsModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="notebook-details-view" id="notebook-details-view-body">
+                <!-- Loaded dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeDetailsModal()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
