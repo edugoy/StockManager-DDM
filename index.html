@@ -67,6 +67,21 @@
                     <button class="btn btn-secondary btn-icon-only" onclick="exportData()" title="Copia de Seguridad Completa (JSON)">
                         <i data-lucide="download"></i>
                     </button>
+                    <div class="notification-dropdown-container">
+                        <button class="btn btn-secondary btn-icon-only" id="notification-bell-btn" onclick="toggleNotificationDropdown(event)" title="Notificaciones de Gestión" style="position: relative;">
+                            <i data-lucide="bell"></i>
+                            <span class="notification-badge" id="notification-counter">0</span>
+                        </button>
+                        <div class="notification-dropdown glass-panel hidden-section" id="notification-dropdown-menu">
+                            <div class="notification-dropdown-header">
+                                <h4>Alertas de Gestión</h4>
+                                <span class="notification-badge-count-header" id="notification-header-count">0 pendientes</span>
+                            </div>
+                            <div class="notification-dropdown-body" id="notification-dropdown-list">
+                                <!-- Loaded dynamically via app.js -->
+                            </div>
+                        </div>
+                    </div>
                     <button class="btn btn-primary" onclick="openNotebookModal()">
                         <i data-lucide="plus"></i>
                         <span>Añadir Activo</span>
@@ -395,6 +410,16 @@
                             </select>
                         </div>
                     </div>
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="notebook-assignment-date" class="required-field">Fecha de Entrega</label>
+                            <input type="date" id="notebook-assignment-date">
+                        </div>
+                        <div class="form-group">
+                            <label for="notebook-return-date" class="required-field">Fecha de Devolución</label>
+                            <input type="date" id="notebook-return-date">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -441,6 +466,16 @@
                         <option value="Home Office">Home Office (Remoto)</option>
                         <option value="Call Center / Home Office">Híbrido (Call Center / Home Office)</option>
                     </select>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label for="assign-date" class="required-field">Fecha de Entrega</label>
+                        <input type="date" id="assign-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="assign-return-date" class="required-field">Fecha de Devolución</label>
+                        <input type="date" id="assign-return-date" required>
+                    </div>
                 </div>
                 <!-- Signature field shown dynamically for notebooks -->
                 <div class="form-group" id="assign-signature-wrapper">

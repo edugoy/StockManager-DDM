@@ -30,6 +30,8 @@ const DEFAULT_ASSETS = [
         assignedTo: '',
         employeeId: '',
         assignmentLocation: '',
+        assignmentDate: '',
+        returnDate: '',
         signedDeliveryPaper: true,
         dateAdded: '2026-05-10',
         notes: 'Equipo base. Cargador y funda original.'
@@ -48,6 +50,8 @@ const DEFAULT_ASSETS = [
         assignedTo: 'Carlos Giménez',
         employeeId: 'LEG-8831',
         assignmentLocation: 'Home Office',
+        assignmentDate: '2026-05-12',
+        returnDate: '2026-05-20', // Overdue (Today is May 27, 2026)
         signedDeliveryPaper: false, // Pending!
         dateAdded: '2026-05-12',
         notes: 'Entregado con mochila. Tiene detalle estético menor en bisagra.'
@@ -66,6 +70,8 @@ const DEFAULT_ASSETS = [
         assignedTo: 'Sofía Rodríguez',
         employeeId: 'LEG-9012',
         assignmentLocation: 'Call Center / Home Office',
+        assignmentDate: '2026-05-15',
+        returnDate: '2026-05-27', // Due Today (Today is May 27, 2026)
         signedDeliveryPaper: true,
         dateAdded: '2026-05-15',
         notes: 'Uso en desarrollo. Licencias corporativas cargadas.'
@@ -84,6 +90,8 @@ const DEFAULT_ASSETS = [
         assignedTo: '',
         employeeId: '',
         assignmentLocation: '',
+        assignmentDate: '',
+        returnDate: '',
         signedDeliveryPaper: true,
         dateAdded: '2026-05-05',
         notes: 'Contrato de comodato trimestral con IVESS.'
@@ -102,6 +110,8 @@ const DEFAULT_ASSETS = [
         assignedTo: '',
         employeeId: '',
         assignmentLocation: 'Call Center', // Assigned to room location
+        assignmentDate: '',
+        returnDate: '',
         signedDeliveryPaper: true,
         dateAdded: '2026-05-01',
         notes: 'Instalado en Sala de Operaciones Principal.'
@@ -120,6 +130,8 @@ const DEFAULT_ASSETS = [
         assignedTo: '',
         employeeId: '',
         assignmentLocation: '',
+        assignmentDate: '',
+        returnDate: '',
         signedDeliveryPaper: true,
         dateAdded: '2026-05-20',
         notes: 'En stock de soporte para recambios de hardware.'
@@ -138,6 +150,8 @@ const DEFAULT_ASSETS = [
         assignedTo: '',
         employeeId: '',
         assignmentLocation: '',
+        assignmentDate: '',
+        returnDate: '',
         signedDeliveryPaper: true,
         dateAdded: '2026-05-02',
         notes: 'Próxima recarga requerida antes de caducidad.'
@@ -156,6 +170,8 @@ const DEFAULT_ASSETS = [
         assignedTo: 'Carlos Giménez',
         employeeId: 'LEG-8831',
         assignmentLocation: 'Home Office',
+        assignmentDate: '2026-05-12',
+        returnDate: '2026-11-12',
         signedDeliveryPaper: true,
         dateAdded: '2026-05-12',
         notes: 'Línea corporativa asignada.'
@@ -248,6 +264,26 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Set periodic notifications check (every 1 hour = 3,600,000 milliseconds)
     setInterval(checkUnsignedPapersAndNotify, 3600000);
+    
+    // Set periodic overdue notifications check (every 2 hours = 7,200,000 milliseconds)
+    setInterval(checkOverdueAssignmentsAndNotify, 7200000);
+
+    // Initial check after a short delay
+    setTimeout(() => {
+        checkUnsignedPapersAndNotify();
+        checkOverdueAssignmentsAndNotify();
+    }, 2000);
+
+    // Click outside notification dropdown to close it
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('notification-dropdown-menu');
+        const btn = document.getElementById('notification-bell-btn');
+        if (menu && btn && !menu.classList.contains('hidden-section')) {
+            if (!menu.contains(e.target) && !btn.contains(e.target)) {
+                menu.classList.add('hidden-section');
+            }
+        }
+    });
 });
 
 // Real-time Clock in Header
@@ -337,6 +373,7 @@ function refreshUI() {
     renderDashboard();
     renderInventoryTable();
     renderHistory();
+    renderNotificationsDropdown();
     lucide.createIcons();
 }
 
@@ -405,9 +442,55 @@ window.checkUnsignedPapersAndNotify = function(manual = false) {
                 });
             }
         }
+    }
+};
+
+window.checkOverdueAssignmentsAndNotify = function(manual = false) {
+    const overdue = assets.filter(a => a.status === 'Asignado' && isOverdue(a.returnDate));
+    const todayDue = assets.filter(a => a.status === 'Asignado' && isDueToday(a.returnDate));
+
+    if (overdue.length > 0) {
+        const detailList = overdue.map(a => `${a.assignedTo} (Leg: ${a.employeeId}) con ${a.brandModel}`).join(', ');
+        const msg = `CRÍTICO: Plazo Vencido. Se debe recuperar el equipo en posesión de: ${detailList}.`;
+        
+        if (manual) {
+            showToast(msg, 'error');
+        } else {
+            showToast(msg, 'warning');
+        }
+
+        // Native push Notification
+        if ("Notification" in window) {
+            if (Notification.permission === "granted") {
+                new Notification("ITAsset Pro - RECUPERO URGENTE DE EQUIPOS", {
+                    body: `Atención: Plazo vencido. Se debe recuperar el equipo. En posesión de: ${detailList}.`,
+                    tag: 'overdue-recupero-alert',
+                    requireInteraction: true
+                });
+            }
+        }
     } else {
         if (manual) {
-            showToast("Excelente: No hay firmas pendientes de entrega.", "success");
+            showToast("No hay devoluciones vencidas en este momento.", "success");
+        }
+    }
+
+    if (todayDue.length > 0) {
+        const detailList = todayDue.map(a => `${a.assignedTo} (Leg: ${a.employeeId}) con ${a.brandModel}`).join(', ');
+        const msg = `Advertencia: Hoy se debe devolver el equipo asignado a: ${detailList}.`;
+        
+        // Show today due notice only once on load or manual, prevent toast clutter
+        if (manual) {
+            showToast(msg, 'success');
+        } else {
+            showToast(msg, 'warning');
+        }
+
+        if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("ITAsset Pro - Hoy vence devolución", {
+                body: `Aviso: Hoy se debe devolver el equipo en posesión de: ${detailList}.`,
+                tag: 'today-due-warning'
+            });
         }
     }
 };
@@ -472,12 +555,40 @@ function renderManagementAlerts() {
         return diffDays >= 0 && diffDays <= 60; // Expiring soon
     });
 
-    if (unsignedNotebooks.length === 0 && expiringAssets.length === 0) {
+    // Overdue and Due today assignments
+    const overdueAssignments = assets.filter(a => a.status === 'Asignado' && isOverdue(a.returnDate));
+    const todayAssignments = assets.filter(a => a.status === 'Asignado' && isDueToday(a.returnDate));
+
+    if (unsignedNotebooks.length === 0 && expiringAssets.length === 0 && overdueAssignments.length === 0 && todayAssignments.length === 0) {
         return; // No alerts needed
     }
 
     const alertBox = document.createElement('div');
     alertBox.className = 'alerts-section-container';
+
+    // Renders overdue assignments alerts
+    overdueAssignments.forEach(a => {
+        const item = document.createElement('div');
+        item.className = 'alert-banner critical';
+        item.innerHTML = `
+            <div class="alert-banner-content">
+                <i data-lucide="calendar-x" style="color:var(--danger); animation: alertPulse 2s infinite;"></i>
+                <div>
+                    <div class="alert-banner-title">PLAZO DE DEVOLUCIÓN VENCIDO - RECUPERACIÓN REQUERIDA</div>
+                    <div class="alert-banner-desc">El asesor <strong>${a.assignedTo}</strong> (Legajo: <code>${a.employeeId}</code>) retiene el activo <strong>${a.brandModel} (${a.itemType}) S/N: ${a.serialNumber}</strong>. El plazo venció el: <strong>${a.returnDate}</strong>.</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="quickReturnAsset('${a.id}')">
+                    <i data-lucide="user-minus" style="width:13px; height:13px;"></i> Devolución Stock
+                </button>
+                <button class="btn btn-primary" style="padding:6px 12px; font-size:0.75rem; background:var(--danger-gradient); box-shadow:none;" onclick="checkOverdueAssignmentsAndNotify(true)">
+                    Testear Alerta (2h)
+                </button>
+            </div>
+        `;
+        alertBox.appendChild(item);
+    });
 
     // Renders unsigned alerts
     unsignedNotebooks.forEach(nb => {
@@ -499,6 +610,25 @@ function renderManagementAlerts() {
                     Testear Alerta
                 </button>
             </div>
+        `;
+        alertBox.appendChild(item);
+    });
+
+    // Renders due today warning alerts
+    todayAssignments.forEach(a => {
+        const item = document.createElement('div');
+        item.className = 'alert-banner warning-alert';
+        item.innerHTML = `
+            <div class="alert-banner-content">
+                <i data-lucide="bell"></i>
+                <div>
+                    <div class="alert-banner-title">Plazo de Devolución Vence Hoy</div>
+                    <div class="alert-banner-desc">Hoy <strong>${a.returnDate}</strong> se debe devolver el activo <strong>${a.brandModel} (${a.itemType} - S/N: ${a.serialNumber})</strong>. En posesión de <strong>${a.assignedTo}</strong> (Legajo: <code>${a.employeeId}</code>).</div>
+                </div>
+            </div>
+            <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="quickReturnAsset('${a.id}')">
+                Registrar Retorno
+            </button>
         `;
         alertBox.appendChild(item);
     });
@@ -697,6 +827,15 @@ function renderInventoryTable() {
                     assignHtml += ` <span class="badge-sig pendiente"><i data-lucide="clock" style="width:10px; height:10px;"></i> PENDIENTE</span>`;
                 }
             }
+
+            // Return date status indicators
+            if (a.returnDate) {
+                if (isOverdue(a.returnDate)) {
+                    assignHtml += ` <br><span style="color:var(--danger); font-size:0.75rem; font-weight:600; display:inline-flex; align-items:center; gap:3px; margin-top:4px;"><i data-lucide="calendar-off" style="width:12px; height:12px;"></i> VENCIDO (${a.returnDate})</span>`;
+                } else if (isDueToday(a.returnDate)) {
+                    assignHtml += ` <br><span style="color:var(--warning); font-size:0.75rem; font-weight:600; display:inline-flex; align-items:center; gap:3px; margin-top:4px;"><i data-lucide="bell" style="width:12px; height:12px;"></i> Devuelve Hoy</span>`;
+                }
+            }
         } else {
             assignHtml = '<span style="color:var(--text-muted);">Sin asignar</span>';
         }
@@ -771,6 +910,18 @@ function isNearExpiry(expiryDateStr) {
     const diff = expiry - today;
     const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
     return days >= 0 && days <= 60;
+}
+
+function isOverdue(returnDateStr) {
+    if (!returnDateStr) return false;
+    const today = new Date().toISOString().split('T')[0];
+    return returnDateStr < today;
+}
+
+function isDueToday(returnDateStr) {
+    if (!returnDateStr) return false;
+    const today = new Date().toISOString().split('T')[0];
+    return returnDateStr === today;
 }
 
 // ----------------------------------------------------
@@ -902,6 +1053,10 @@ window.openNotebookModal = function(id = null) {
     document.getElementById('asset-receipt-filename').value = '';
     document.getElementById('receipt-preview-container').classList.add('hidden-section');
 
+    // Reset date fields
+    document.getElementById('notebook-assignment-date').value = '';
+    document.getElementById('notebook-return-date').value = '';
+
     if (id) {
         // Edit Mode
         modalTitle.textContent = 'Editar Activo';
@@ -950,6 +1105,8 @@ window.openNotebookModal = function(id = null) {
                 document.getElementById('notebook-employee').value = asset.assignedTo || '';
                 document.getElementById('notebook-employee-id').value = asset.employeeId || '';
                 document.getElementById('notebook-location').value = asset.assignmentLocation || 'Call Center';
+                document.getElementById('notebook-assignment-date').value = asset.assignmentDate || '';
+                document.getElementById('notebook-return-date').value = asset.returnDate || '';
                 
                 if (asset.itemType === 'Notebook') {
                     document.getElementById('notebook-signature').value = asset.signedDeliveryPaper ? 'si' : 'no';
@@ -974,11 +1131,15 @@ window.handleModalStatusChange = function(status) {
     const employeeInput = document.getElementById('notebook-employee');
     const employeeIdInput = document.getElementById('notebook-employee-id');
     const typeVal = document.getElementById('asset-item-type').value;
+    const assignmentDateInput = document.getElementById('notebook-assignment-date');
+    const returnDateInput = document.getElementById('notebook-return-date');
 
     if (status === 'Asignado') {
         assignmentFields.classList.remove('hidden-section');
         employeeInput.required = true;
         employeeIdInput.required = true;
+        assignmentDateInput.required = true;
+        returnDateInput.required = true;
         
         // Show/hide signature depending on type
         const signatureGroup = document.getElementById('signature-form-group');
@@ -991,6 +1152,8 @@ window.handleModalStatusChange = function(status) {
         assignmentFields.classList.add('hidden-section');
         employeeInput.required = false;
         employeeIdInput.required = false;
+        assignmentDateInput.required = false;
+        returnDateInput.required = false;
     }
 };
 
@@ -1017,15 +1180,22 @@ window.saveNotebook = function(event) {
     const employeeId = document.getElementById('notebook-employee-id').value.trim();
     const location = document.getElementById('notebook-location').value;
     const signed = itemType === 'Notebook' ? (document.getElementById('notebook-signature').value === 'si') : true;
+    const assignmentDate = document.getElementById('notebook-assignment-date').value;
+    const returnDate = document.getElementById('notebook-return-date').value;
 
     // Checks
     if (!category || !itemType || !model || !serial || !purchaseDate || !expiryDate || !purchasePrice) {
-        showToast('Por favor completa todos los campos obligatorios.', 'error');
+        showToast('Por favor completa todos los campos obligatorios del activo.', 'error');
         return;
     }
 
     if (itemType === 'Dispenser de Agua' && !ownershipType) {
         showToast('Por favor selecciona el régimen de propiedad para el dispenser.', 'error');
+        return;
+    }
+
+    if (status === 'Asignado' && (!employee || !employeeId || !assignmentDate || !returnDate)) {
+        showToast('Por favor completa todos los campos obligatorios de la asignación.', 'error');
         return;
     }
 
@@ -1081,6 +1251,8 @@ window.saveNotebook = function(event) {
                 assignedTo: status === 'Asignado' ? employee : '',
                 employeeId: status === 'Asignado' ? employeeId : '',
                 assignmentLocation: status === 'Asignado' ? location : '',
+                assignmentDate: status === 'Asignado' ? assignmentDate : '',
+                returnDate: status === 'Asignado' ? returnDate : '',
                 signedDeliveryPaper: status === 'Asignado' ? signed : true
             };
 
@@ -1118,6 +1290,8 @@ window.saveNotebook = function(event) {
             assignedTo: status === 'Asignado' ? employee : '',
             employeeId: status === 'Asignado' ? employeeId : '',
             assignmentLocation: status === 'Asignado' ? location : '',
+            assignmentDate: status === 'Asignado' ? assignmentDate : '',
+            returnDate: status === 'Asignado' ? returnDate : '',
             signedDeliveryPaper: status === 'Asignado' ? signed : true,
             dateAdded: new Date().toISOString().split('T')[0],
             notes: notes
@@ -1184,6 +1358,10 @@ window.openAssignModal = function(id) {
     document.getElementById('assign-employee-id').value = '';
     document.getElementById('assign-notes').value = '';
     
+    // Set default dates
+    document.getElementById('assign-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('assign-return-date').value = '';
+    
     // Toggle signature visibility
     const sigWrapper = document.getElementById('assign-signature-wrapper');
     if (asset.itemType === 'Notebook') {
@@ -1216,7 +1394,14 @@ window.confirmAssignment = function(event) {
     const employeeId = document.getElementById('assign-employee-id').value.trim();
     const location = document.getElementById('assign-location').value;
     const signed = document.getElementById('assign-signature').value === 'si';
+    const assignmentDate = document.getElementById('assign-date').value;
+    const returnDate = document.getElementById('assign-return-date').value;
     const notes = document.getElementById('assign-notes').value.trim();
+
+    if (!assignmentDate || !returnDate) {
+        showToast('Por favor completa las fechas de entrega y devolución.', 'error');
+        return;
+    }
 
     const assetIndex = assets.findIndex(a => a.id === id);
     if (assetIndex !== -1) {
@@ -1228,6 +1413,8 @@ window.confirmAssignment = function(event) {
             assignedTo: employee,
             employeeId: employeeId,
             assignmentLocation: location,
+            assignmentDate: assignmentDate,
+            returnDate: returnDate,
             signedDeliveryPaper: signed,
             notes: notes ? (asset.notes ? asset.notes + ' | ' + notes : notes) : asset.notes
         };
@@ -1239,7 +1426,7 @@ window.confirmAssignment = function(event) {
             brandModel: asset.brandModel,
             serialNumber: asset.serialNumber,
             action: 'Asignación',
-            details: `Asignado a ${employee} (Legajo: ${employeeId}) en ${location}. Firma: ${signed ? 'Sí' : 'No'}.`,
+            details: `Asignado a ${employee} (Legajo: ${employeeId}) en ${location}. Entrega: ${assignmentDate}, Devolución: ${returnDate}. Firma: ${signed ? 'Sí' : 'No'}.`,
             timestamp: getFormattedTimestamp(),
             status: 'Asignado',
             notes: notes
@@ -1270,6 +1457,8 @@ window.quickReturnAsset = function(id) {
                 assignedTo: '',
                 employeeId: '',
                 assignmentLocation: '',
+                assignmentDate: '',
+                returnDate: '',
                 signedDeliveryPaper: true
             };
 
@@ -1303,6 +1492,8 @@ window.quickToggleMaintenance = function(id, direction) {
                 assignedTo: '',
                 employeeId: '',
                 assignmentLocation: '',
+                assignmentDate: '',
+                returnDate: '',
                 signedDeliveryPaper: true
             };
 
@@ -1449,6 +1640,14 @@ window.viewAssetDetails = function(id) {
                 <span class="details-label">Ubicación / Modalidad</span>
                 <span class="details-value">${asset.assignmentLocation}</span>
             </div>
+            <div class="details-item">
+                <span class="details-label">Fecha de Entrega</span>
+                <span class="details-value">${asset.assignmentDate || '-'}</span>
+            </div>
+            <div class="details-item">
+                <span class="details-label">Fecha de Devolución</span>
+                <span class="details-value" style="${isOverdue(asset.returnDate) ? 'color:var(--danger); font-weight:600;' : ''}">${asset.returnDate || '-'}</span>
+            </div>
         `;
         if (asset.itemType === 'Notebook') {
             assignHtml += `
@@ -1542,7 +1741,7 @@ window.exportCSV = function() {
     }
 
     let csvContent = '\uFEFF'; // UTF-8 BOM
-    csvContent += 'Categoría,Tipo de Activo,Marca/Modelo,Número de Serie/ID,Estado,Empleado Asignado,Número Legajo,Modalidad,Firma Papel,Fecha Compra,Fecha Caducidad,Precio,Régimen Dispenser,Fecha Registro,Notas\r\n';
+    csvContent += 'Categoría,Tipo de Activo,Marca/Modelo,Número de Serie/ID,Estado,Empleado Asignado,Número Legajo,Modalidad,Fecha Entrega,Fecha Devolución,Firma Papel,Fecha Compra,Fecha Caducidad,Precio,Régimen Dispenser,Fecha Registro,Notas\r\n';
 
     assets.forEach(a => {
         const row = [
@@ -1554,6 +1753,8 @@ window.exportCSV = function() {
             `"${(a.assignedTo || '').replace(/"/g, '""')}"`,
             `"${(a.employeeId || '').replace(/"/g, '""')}"`,
             `"${(a.assignmentLocation || '')}"`,
+            `"${(a.assignmentDate || '')}"`,
+            `"${(a.returnDate || '')}"`,
             `"${(a.itemType === 'Notebook' ? (a.signedDeliveryPaper ? 'Sí' : 'No') : 'N/A')}"`,
             `"${(a.purchaseDate || '')}"`,
             `"${(a.expiryDate || '')}"`,
@@ -1786,4 +1987,164 @@ window.viewReceipt = function(id) {
     } catch(err) {
         showToast("Error al decodificar el archivo comprobante.", "error");
     }
+};
+
+// ====================================================
+// NOTIFICATION DROPDOWN CONTROLLER & RENDERER
+// ====================================================
+window.toggleNotificationDropdown = function(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('notification-dropdown-menu');
+    if (menu) {
+        menu.classList.toggle('hidden-section');
+    }
+};
+
+window.renderNotificationsDropdown = function() {
+    const listContainer = document.getElementById('notification-dropdown-list');
+    const counter = document.getElementById('notification-counter');
+    const headerCount = document.getElementById('notification-header-count');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = '';
+
+    // 1. Overdue Returns
+    const overdueAssignments = assets.filter(a => a.status === 'Asignado' && isOverdue(a.returnDate));
+
+    // 2. Unsigned Notebooks
+    const unsignedNotebooks = assets.filter(a => 
+        a.status === 'Asignado' && 
+        a.itemType === 'Notebook' && 
+        a.signedDeliveryPaper === false
+    );
+
+    // 3. Due Today Returns
+    const todayAssignments = assets.filter(a => a.status === 'Asignado' && isDueToday(a.returnDate));
+
+    // 4. Expiring Assets (under 60 days)
+    const today = new Date();
+    const expiringAssets = assets.filter(a => {
+        if (!a.expiryDate) return false;
+        const expiry = new Date(a.expiryDate);
+        const diffTime = expiry - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays >= 0 && diffDays <= 60;
+    });
+
+    const totalAlerts = unsignedNotebooks.length + overdueAssignments.length + todayAssignments.length + expiringAssets.length;
+
+    // Update Counter Badge
+    if (totalAlerts > 0) {
+        counter.textContent = totalAlerts;
+        counter.classList.remove('hidden-section');
+        counter.classList.add('pulse');
+    } else {
+        counter.textContent = '0';
+        counter.classList.add('hidden-section');
+        counter.classList.remove('pulse');
+    }
+
+    // Update Header Count Text
+    headerCount.textContent = `${totalAlerts} ${totalAlerts === 1 ? 'pendiente' : 'pendientes'}`;
+
+    if (totalAlerts === 0) {
+        listContainer.innerHTML = `
+            <div class="notification-empty-state">
+                <div class="notification-empty-icon">
+                    <i data-lucide="shield-check" style="width:20px; height:20px;"></i>
+                </div>
+                <span class="notification-empty-text">No hay alertas pendientes</span>
+            </div>
+        `;
+        lucide.createIcons();
+        return;
+    }
+
+    // Helper to add card to dropdown list
+    const appendCard = (title, desc, icon, isCritical, actionBtnHtml = '') => {
+        const card = document.createElement('div');
+        card.className = `notification-item-card ${isCritical ? 'critical' : 'warning-alert'}`;
+        card.innerHTML = `
+            <div class="notification-item-card-header">
+                <div class="notification-item-icon ${isCritical ? 'critical' : 'warning-alert'}">
+                    <i data-lucide="${icon}" style="width:14px; height:14px;"></i>
+                </div>
+                <div class="notification-item-content">
+                    <div class="notification-item-title">${title}</div>
+                    <div class="notification-item-desc">${desc}</div>
+                </div>
+            </div>
+            ${actionBtnHtml ? `<div class="notification-item-actions">${actionBtnHtml}</div>` : ''}
+        `;
+        listContainer.appendChild(card);
+    };
+
+    // Render Overdue Alerts (Critical)
+    overdueAssignments.forEach(a => {
+        const actionHtml = `
+            <button class="btn btn-secondary btn-mini" onclick="quickReturnAsset('${a.id}')">
+                <i data-lucide="user-minus" style="width:11px; height:11px;"></i> Devolver
+            </button>
+        `;
+        appendCard(
+            'Devolución Vencida',
+            `El asesor <strong>${a.assignedTo}</strong> (Legajo: <code>${a.employeeId}</code>) retiene el activo <strong>${a.brandModel} (${a.itemType})</strong>. Plazo venció el <strong>${a.returnDate}</strong>.`,
+            'calendar-x',
+            true,
+            actionHtml
+        );
+    });
+
+    // Render Unsigned Notebooks (Critical)
+    unsignedNotebooks.forEach(nb => {
+        const actionHtml = `
+            <button class="btn btn-secondary btn-mini" onclick="quickSignNotebook('${nb.id}')">
+                <i data-lucide="file-signature" style="width:11px; height:11px; color:var(--success);"></i> Registrar Firma
+            </button>
+        `;
+        appendCard(
+            'Firma de Entrega Pendiente',
+            `El asesor <strong>${nb.assignedTo}</strong> (Legajo: <code>${nb.employeeId}</code>) no firmó la entrega de la notebook <strong>${nb.brandModel}</strong>.`,
+            'shield-alert',
+            true,
+            actionHtml
+        );
+    });
+
+    // Render Due Today (Warning)
+    todayAssignments.forEach(a => {
+        const actionHtml = `
+            <button class="btn btn-secondary btn-mini" onclick="quickReturnAsset('${a.id}')">
+                <i data-lucide="user-minus" style="width:11px; height:11px;"></i> Devolver
+            </button>
+        `;
+        appendCard(
+            'Devolución para Hoy',
+            `Hoy vence la devolución de <strong>${a.brandModel} (${a.itemType})</strong> en posesión de <strong>${a.assignedTo}</strong> (Legajo: <code>${a.employeeId}</code>).`,
+            'bell',
+            false,
+            actionHtml
+        );
+    });
+
+    // Render Expiring Assets (Warning)
+    expiringAssets.forEach(a => {
+        const actionHtml = `
+            <button class="btn btn-secondary btn-mini" onclick="openNotebookModal('${a.id}')">
+                <i data-lucide="edit-3" style="width:11px; height:11px;"></i> Actualizar Ficha
+            </button>
+        `;
+        const expiry = new Date(a.expiryDate);
+        const diffTime = expiry - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        appendCard(
+            'Activo Próximo a Vencer',
+            `El activo <strong>${a.brandModel} (${a.itemType})</strong> caduca el <strong>${a.expiryDate}</strong> (en ${diffDays} días).`,
+            'alert-triangle',
+            false,
+            actionHtml
+        );
+    });
+
+    lucide.createIcons();
 };
