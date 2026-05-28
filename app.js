@@ -221,6 +221,9 @@ const DEFAULT_HISTORY = [
     }
 ];
 
+// API Backend Configuration
+const API_URL = 'http://localhost:3000/api';
+
 // App State
 let assets = [];
 let historyLog = [];
@@ -229,8 +232,84 @@ let currentSearchQuery = '';
 // Toast Notification Container
 let toastContainerElement = null;
 
+// Database connection helpers
+async function apiUpdateAsset(asset) {
+    const response = await fetch(`${API_URL}/assets/${asset.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(asset)
+    });
+    if (!response.ok) throw new Error("Error al actualizar activo en base de datos.");
+}
+
+async function apiCreateAsset(asset) {
+    const response = await fetch(`${API_URL}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(asset)
+    });
+    if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Error al registrar activo en base de datos.");
+    }
+}
+
+async function apiDeleteAsset(id) {
+    const response = await fetch(`${API_URL}/assets/${id}`, {
+        method: 'DELETE'
+    });
+    if (!response.ok) throw new Error("Error al eliminar activo de la base de datos.");
+}
+
+async function apiCreateHistory(historyItem) {
+    const response = await fetch(`${API_URL}/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(historyItem)
+    });
+    if (!response.ok) console.warn("No se pudo registrar la entrada de auditoría en la base de datos.");
+}
+
+// Load data from MySQL API with localStorage fallback if server is offline
+async function loadInitialData() {
+    try {
+        const [assetsRes, historyRes] = await Promise.all([
+            fetch(`${API_URL}/assets`),
+            fetch(`${API_URL}/history`)
+        ]);
+        
+        if (assetsRes.ok) {
+            assets = await assetsRes.json();
+        } else {
+            throw new Error("No se pudo obtener activos desde el servidor.");
+        }
+        
+        if (historyRes.ok) {
+            historyLog = await historyRes.json();
+        }
+    } catch (err) {
+        console.warn("Servidor MySQL offline. Cargando datos de respaldo local (localStorage)...", err);
+        showToast("Backend MySQL desconectado. Usando almacenamiento local.", "warning");
+        
+        const localStock = localStorage.getItem(STORAGE_KEY_STOCK);
+        const localHistory = localStorage.getItem(STORAGE_KEY_HISTORY);
+
+        if (localStock) {
+            assets = JSON.parse(localStock);
+        } else {
+            assets = [...DEFAULT_ASSETS];
+        }
+
+        if (localHistory) {
+            historyLog = JSON.parse(localHistory);
+        } else {
+            historyLog = [...DEFAULT_HISTORY];
+        }
+    }
+}
+
 // Initialize App
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // Setup toast container
     toastContainerElement = document.createElement('div');
     toastContainerElement.className = 'toast-container';
@@ -239,23 +318,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Request desktop notifications permission
     initNotifications();
 
-    // Load data from LocalStorage or Load Defaults
-    const localStock = localStorage.getItem(STORAGE_KEY_STOCK);
-    const localHistory = localStorage.getItem(STORAGE_KEY_HISTORY);
-
-    if (localStock) {
-        assets = JSON.parse(localStock);
-    } else {
-        assets = [...DEFAULT_ASSETS];
-        localStorage.setItem(STORAGE_KEY_STOCK, JSON.stringify(assets));
-    }
-
-    if (localHistory) {
-        historyLog = JSON.parse(localHistory);
-    } else {
-        historyLog = [...DEFAULT_HISTORY];
-        localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(historyLog));
-    }
+    // Load data from MySQL backend or Fallback
+    await loadInitialData();
 
     // Initialize UI Elements
     initClock();
@@ -978,11 +1042,18 @@ window.handleHistorySearch = function(value) {
     renderHistory();
 };
 
-window.clearHistoryLog = function() {
+window.clearHistoryLog = async function() {
     if (confirm('¿Estás seguro de que deseas vaciar el historial de auditoría? Esta acción no se puede deshacer.')) {
-        historyLog = [];
-        showToast('Historial de auditoría borrado.', 'warning');
-        refreshUI();
+        try {
+            const response = await fetch(`${API_URL}/history`, { method: 'DELETE' });
+            if (!response.ok) throw new Error("Fallo al borrar historial en el servidor");
+            historyLog = [];
+            showToast('Historial de auditoría borrado.', 'warning');
+            refreshUI();
+        } catch (err) {
+            console.error(err);
+            showToast("Error al borrar el historial en MySQL.", "error");
+        }
     }
 };
 
@@ -1157,7 +1228,7 @@ window.handleModalStatusChange = function(status) {
     }
 };
 
-window.saveNotebook = function(event) {
+window.saveNotebook = async function(event) {
     event.preventDefault();
 
     const id = document.getElementById('notebook-id').value;
@@ -1209,37 +1280,82 @@ window.saveNotebook = function(event) {
 
     const timestamp = getFormattedTimestamp();
 
-    if (id) {
-        // Edit Mode
-        const assetIndex = assets.findIndex(a => a.id === id);
-        if (assetIndex !== -1) {
-            const original = assets[assetIndex];
-            let logDetails = [];
-            let actionType = 'Edición';
+    try {
+        if (id) {
+            // Edit Mode
+            const assetIndex = assets.findIndex(a => a.id === id);
+            if (assetIndex !== -1) {
+                const original = assets[assetIndex];
+                let logDetails = [];
+                let actionType = 'Edición';
 
-            if (original.status !== status) {
-                actionType = status === 'Asignado' ? 'Asignación' :
-                             status === 'En Mantenimiento' ? 'Mantenimiento' :
-                             status === 'Retirado' ? 'Retiro' : 'Devolución';
+                if (original.status !== status) {
+                    actionType = status === 'Asignado' ? 'Asignación' :
+                                 status === 'En Mantenimiento' ? 'Mantenimiento' :
+                                 status === 'Retirado' ? 'Retiro' : 'Devolución';
 
-                if (status === 'Asignado') {
-                    logDetails.push(`Asignado a ${employee} (Legajo: ${employeeId}) en ${location}. Firma: ${signed ? 'Sí' : 'No'}`);
-                } else if (status === 'Disponible' && original.status === 'Asignado') {
-                    logDetails.push(`Devolución de equipo. Retirado de ${original.assignedTo}`);
+                    if (status === 'Asignado') {
+                        logDetails.push(`Asignado a ${employee} (Legajo: ${employeeId}) en ${location}. Firma: ${signed ? 'Sí' : 'No'}`);
+                    } else if (status === 'Disponible' && original.status === 'Asignado') {
+                        logDetails.push(`Devolución de equipo. Retirado de ${original.assignedTo}`);
+                    } else {
+                        logDetails.push(`Cambio de estado: de ${original.status} a ${status}`);
+                    }
+                } else if (status === 'Asignado' && original.signedDeliveryPaper !== signed) {
+                    actionType = 'Firma Conformada';
+                    logDetails.push(signed ? 'Firma de papel de entrega conformada.' : 'Firma marcada como pendiente.');
                 } else {
-                    logDetails.push(`Cambio de estado: de ${original.status} a ${status}`);
+                    logDetails.push('Edición de datos generales de ficha.');
                 }
-            } else if (status === 'Asignado' && original.signedDeliveryPaper !== signed) {
-                actionType = 'Firma Conformada';
-                logDetails.push(signed ? 'Firma de papel de entrega conformada.' : 'Firma marcada como pendiente.');
-            } else {
-                logDetails.push('Edición de datos generales de ficha.');
-            }
 
-            // Update
-            assets[assetIndex] = {
-                ...original,
+                const updatedAsset = {
+                    ...original,
+                    brandModel: model,
+                    status: status,
+                    purchaseDate: purchaseDate,
+                    expiryDate: expiryDate,
+                    purchasePrice: purchasePrice,
+                    ownershipType: ownershipType,
+                    receiptData: receiptData,
+                    receiptFilename: receiptFilename,
+                    notes: notes,
+                    assignedTo: status === 'Asignado' ? employee : '',
+                    employeeId: status === 'Asignado' ? employeeId : '',
+                    assignmentLocation: status === 'Asignado' ? location : '',
+                    assignmentDate: status === 'Asignado' ? assignmentDate : '',
+                    returnDate: status === 'Asignado' ? returnDate : '',
+                    signedDeliveryPaper: status === 'Asignado' ? signed : true
+                };
+
+                await apiUpdateAsset(updatedAsset);
+
+                const historyItem = {
+                    id: 'h-' + Date.now(),
+                    notebookId: id,
+                    brandModel: model,
+                    serialNumber: original.serialNumber,
+                    action: actionType,
+                    details: logDetails.join('. '),
+                    timestamp: timestamp,
+                    status: status,
+                    notes: notes !== original.notes ? notes : ''
+                };
+
+                assets[assetIndex] = updatedAsset;
+                historyLog.push(historyItem);
+                await apiCreateHistory(historyItem);
+
+                showToast(`Ficha de activo ${serial} guardada correctamente.`, 'success');
+            }
+        } else {
+            // Add Mode
+            const newId = 'ast-' + Date.now();
+            const newAsset = {
+                id: newId,
+                category: category,
+                itemType: itemType,
                 brandModel: model,
+                serialNumber: serial,
                 status: status,
                 purchaseDate: purchaseDate,
                 expiryDate: expiryDate,
@@ -1247,103 +1363,81 @@ window.saveNotebook = function(event) {
                 ownershipType: ownershipType,
                 receiptData: receiptData,
                 receiptFilename: receiptFilename,
-                notes: notes,
                 assignedTo: status === 'Asignado' ? employee : '',
                 employeeId: status === 'Asignado' ? employeeId : '',
                 assignmentLocation: status === 'Asignado' ? location : '',
                 assignmentDate: status === 'Asignado' ? assignmentDate : '',
                 returnDate: status === 'Asignado' ? returnDate : '',
-                signedDeliveryPaper: status === 'Asignado' ? signed : true
+                signedDeliveryPaper: status === 'Asignado' ? signed : true,
+                dateAdded: new Date().toISOString().split('T')[0],
+                notes: notes
             };
 
-            // Log
-            historyLog.push({
+            await apiCreateAsset(newAsset);
+
+            const historyItem = {
                 id: 'h-' + Date.now(),
-                notebookId: id,
+                notebookId: newId,
                 brandModel: model,
-                serialNumber: original.serialNumber,
-                action: actionType,
-                details: logDetails.join('. '),
+                serialNumber: serial,
+                action: 'Ingreso',
+                details: status === 'Asignado' ? 
+                    `Ingreso inicial como ASIGNADO a ${employee} (Legajo: ${employeeId}) en ${location}. Firma: ${signed ? 'Sí' : 'No'}.` : 
+                    `Ingreso al stock disponible.`,
                 timestamp: timestamp,
                 status: status,
-                notes: notes !== original.notes ? notes : ''
-            });
+                notes: notes
+            };
 
-            showToast(`Ficha de activo ${serial} guardada correctamente.`, 'success');
+            assets.push(newAsset);
+            historyLog.push(historyItem);
+            await apiCreateHistory(historyItem);
+
+            showToast(`Activo ${itemType} S/N ${serial} registrado con éxito.`, 'success');
         }
-    } else {
-        // Add Mode
-        const newId = 'ast-' + Date.now();
-        const newAsset = {
-            id: newId,
-            category: category,
-            itemType: itemType,
-            brandModel: model,
-            serialNumber: serial,
-            status: status,
-            purchaseDate: purchaseDate,
-            expiryDate: expiryDate,
-            purchasePrice: purchasePrice,
-            ownershipType: ownershipType,
-            receiptData: receiptData,
-            receiptFilename: receiptFilename,
-            assignedTo: status === 'Asignado' ? employee : '',
-            employeeId: status === 'Asignado' ? employeeId : '',
-            assignmentLocation: status === 'Asignado' ? location : '',
-            assignmentDate: status === 'Asignado' ? assignmentDate : '',
-            returnDate: status === 'Asignado' ? returnDate : '',
-            signedDeliveryPaper: status === 'Asignado' ? signed : true,
-            dateAdded: new Date().toISOString().split('T')[0],
-            notes: notes
-        };
-
-        assets.push(newAsset);
-
-        // Log
-        historyLog.push({
-            id: 'h-' + Date.now(),
-            notebookId: newId,
-            brandModel: model,
-            serialNumber: serial,
-            action: 'Ingreso',
-            details: status === 'Asignado' ? 
-                `Ingreso inicial como ASIGNADO a ${employee} (Legajo: ${employeeId}) en ${location}. Firma: ${signed ? 'Sí' : 'No'}.` : 
-                `Ingreso al stock disponible.`,
-            timestamp: timestamp,
-            status: status,
-            notes: notes
-        });
-
-        showToast(`Activo ${itemType} S/N ${serial} registrado con éxito.`, 'success');
+        closeNotebookModal();
+        refreshUI();
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || "Error al registrar datos en MySQL.", "error");
+        await loadInitialData();
+        refreshUI();
     }
-
-    closeNotebookModal();
-    refreshUI();
 };
 
-window.deleteAsset = function(id) {
+window.deleteAsset = async function(id) {
     const asset = assets.find(a => a.id === id);
     if (!asset) return;
 
     if (confirm(`¿Confirmas la eliminación del activo S/N ${asset.serialNumber} (${asset.brandModel})? Esta acción borrará permanentemente la ficha.`)) {
-        assets = assets.filter(a => a.id !== id);
+        try {
+            await apiDeleteAsset(id);
 
-        // Log
-        historyLog.push({
-            id: 'h-' + Date.now(),
-            notebookId: id,
-            brandModel: asset.brandModel,
-            serialNumber: asset.serialNumber,
-            action: 'Retiro',
-            details: `Eliminación manual del inventario. Estado previo: ${asset.status}`,
-            timestamp: getFormattedTimestamp(),
-            status: 'Retirado',
-            notes: 'Ficha destruida por Administrador.'
-        });
+            // Log
+            const historyItem = {
+                id: 'h-' + Date.now(),
+                notebookId: id,
+                brandModel: asset.brandModel,
+                serialNumber: asset.serialNumber,
+                action: 'Retiro',
+                details: `Eliminación manual del inventario. Estado previo: ${asset.status}`,
+                timestamp: getFormattedTimestamp(),
+                status: 'Retirado',
+                notes: 'Ficha destruida por Administrador.'
+            };
 
-        showToast(`Activo S/N ${asset.serialNumber} eliminado del sistema.`, 'warning');
-        refreshUI();
-    }
+            assets = assets.filter(a => a.id !== id);
+            historyLog.push(historyItem);
+            await apiCreateHistory(historyItem);
+
+            showToast(`Activo S/N ${asset.serialNumber} eliminado del sistema.`, 'warning');
+            refreshUI();
+        } catch (err) {
+            console.error(err);
+            showToast("Error al eliminar el activo de MySQL.", "error");
+            await loadInitialData();
+            refreshUI();
+        }
 };
 
 // ----------------------------------------------------
@@ -1386,7 +1480,7 @@ window.closeAssignModal = function() {
     document.getElementById('assign-modal').classList.remove('active');
 };
 
-window.confirmAssignment = function(event) {
+window.confirmAssignment = async function(event) {
     event.preventDefault();
 
     const id = document.getElementById('assign-notebook-id').value;
@@ -1407,158 +1501,208 @@ window.confirmAssignment = function(event) {
     if (assetIndex !== -1) {
         const asset = assets[assetIndex];
         
-        assets[assetIndex] = {
-            ...asset,
-            status: 'Asignado',
-            assignedTo: employee,
-            employeeId: employeeId,
-            assignmentLocation: location,
-            assignmentDate: assignmentDate,
-            returnDate: returnDate,
-            signedDeliveryPaper: signed,
-            notes: notes ? (asset.notes ? asset.notes + ' | ' + notes : notes) : asset.notes
-        };
+        try {
+            const updatedAsset = {
+                ...asset,
+                status: 'Asignado',
+                assignedTo: employee,
+                employeeId: employeeId,
+                assignmentLocation: location,
+                assignmentDate: assignmentDate,
+                returnDate: returnDate,
+                signedDeliveryPaper: signed,
+                notes: notes ? (asset.notes ? asset.notes + ' | ' + notes : notes) : asset.notes
+            };
 
-        // Log
-        historyLog.push({
-            id: 'h-' + Date.now(),
-            notebookId: id,
-            brandModel: asset.brandModel,
-            serialNumber: asset.serialNumber,
-            action: 'Asignación',
-            details: `Asignado a ${employee} (Legajo: ${employeeId}) en ${location}. Entrega: ${assignmentDate}, Devolución: ${returnDate}. Firma: ${signed ? 'Sí' : 'No'}.`,
-            timestamp: getFormattedTimestamp(),
-            status: 'Asignado',
-            notes: notes
-        });
+            await apiUpdateAsset(updatedAsset);
 
-        showToast(`Activo asignado a ${employee} correctamente.`, 'success');
-        
-        // Alert immediately if signature is missing
-        if (asset.itemType === 'Notebook' && !signed) {
-            checkUnsignedPapersAndNotify(true);
+            const historyItem = {
+                id: 'h-' + Date.now(),
+                notebookId: id,
+                brandModel: asset.brandModel,
+                serialNumber: asset.serialNumber,
+                action: 'Asignación',
+                details: `Asignado a ${employee} (Legajo: ${employeeId}) en ${location}. Entrega: ${assignmentDate}, Devolución: ${returnDate}. Firma: ${signed ? 'Sí' : 'No'}.`,
+                timestamp: getFormattedTimestamp(),
+                status: 'Asignado',
+                notes: notes
+            };
+
+            assets[assetIndex] = updatedAsset;
+            historyLog.push(historyItem);
+            await apiCreateHistory(historyItem);
+
+            showToast(`Activo asignado a ${employee} correctamente.`, 'success');
+            
+            // Alert immediately if signature is missing
+            if (asset.itemType === 'Notebook' && !signed) {
+                checkUnsignedPapersAndNotify(true);
+            }
+            
+            closeAssignModal();
+            refreshUI();
+        } catch (err) {
+            console.error(err);
+            showToast("Error al registrar asignación en MySQL.", "error");
+            await loadInitialData();
+            refreshUI();
         }
     }
-
-    closeAssignModal();
-    refreshUI();
+};
 };
 
-window.quickReturnAsset = function(id) {
+window.quickReturnAsset = async function(id) {
     const assetIndex = assets.findIndex(a => a.id === id);
     if (assetIndex !== -1) {
         const asset = assets[assetIndex];
         const prevOwner = asset.assignedTo;
 
         if (confirm(`¿Confirmar devolución del activo S/N ${asset.serialNumber}? Se desvinculará de ${prevOwner} y pasará a Disponible.`)) {
-            assets[assetIndex] = {
-                ...asset,
-                status: 'Disponible',
-                assignedTo: '',
-                employeeId: '',
-                assignmentLocation: '',
-                assignmentDate: '',
-                returnDate: '',
-                signedDeliveryPaper: true
-            };
+            try {
+                const updatedAsset = {
+                    ...asset,
+                    status: 'Disponible',
+                    assignedTo: '',
+                    employeeId: '',
+                    assignmentLocation: '',
+                    assignmentDate: '',
+                    returnDate: '',
+                    signedDeliveryPaper: true
+                };
 
-            // Log
-            historyLog.push({
-                id: 'h-' + Date.now(),
-                notebookId: id,
-                brandModel: asset.brandModel,
-                serialNumber: asset.serialNumber,
-                action: 'Devolución',
-                details: `Retornado a stock disponible. Estaba asignado a ${prevOwner}.`,
-                timestamp: getFormattedTimestamp(),
-                status: 'Disponible'
-            });
+                await apiUpdateAsset(updatedAsset);
 
-            showToast(`Activo retornado al stock disponible.`, 'success');
+                const historyItem = {
+                    id: 'h-' + Date.now(),
+                    notebookId: id,
+                    brandModel: asset.brandModel,
+                    serialNumber: asset.serialNumber,
+                    action: 'Devolución',
+                    details: `Retornado a stock disponible. Estaba asignado a ${prevOwner}.`,
+                    timestamp: getFormattedTimestamp(),
+                    status: 'Disponible'
+                };
+
+                assets[assetIndex] = updatedAsset;
+                historyLog.push(historyItem);
+                await apiCreateHistory(historyItem);
+
+                showToast(`Activo retornado al stock disponible.`, 'success');
+                refreshUI();
+            } catch (err) {
+                console.error(err);
+                showToast("Error al registrar devolución en MySQL.", "error");
+                await loadInitialData();
+                refreshUI();
+            }
+        }
+    }
+};
+
+window.quickToggleMaintenance = async function(id, direction) {
+    const assetIndex = assets.findIndex(a => a.id === id);
+    if (assetIndex !== -1) {
+        const asset = assets[assetIndex];
+
+        try {
+            let updatedAsset = {};
+            let historyItem = {};
+
+            if (direction === 'to_maint') {
+                updatedAsset = {
+                    ...asset,
+                    status: 'En Mantenimiento',
+                    assignedTo: '',
+                    employeeId: '',
+                    assignmentLocation: '',
+                    assignmentDate: '',
+                    returnDate: '',
+                    signedDeliveryPaper: true
+                };
+
+                historyItem = {
+                    id: 'h-' + Date.now(),
+                    notebookId: id,
+                    brandModel: asset.brandModel,
+                    serialNumber: asset.serialNumber,
+                    action: 'Mantenimiento',
+                    details: `Enviado a servicio de reparación / mantenimiento.`,
+                    timestamp: getFormattedTimestamp(),
+                    status: 'En Mantenimiento'
+                };
+                
+                await apiUpdateAsset(updatedAsset);
+                showToast(`Activo S/N ${asset.serialNumber} enviado a mantenimiento.`, 'warning');
+            } else if (direction === 'from_maint') {
+                updatedAsset = {
+                    ...asset,
+                    status: 'Disponible'
+                };
+
+                historyItem = {
+                    id: 'h-' + Date.now(),
+                    notebookId: id,
+                    brandModel: asset.brandModel,
+                    serialNumber: asset.serialNumber,
+                    action: 'Devolución',
+                    details: `Reincorporado desde taller técnico a stock disponible.`,
+                    timestamp: getFormattedTimestamp(),
+                    status: 'Disponible'
+                };
+
+                await apiUpdateAsset(updatedAsset);
+                showToast(`Activo reincorporado a stock disponible.`, 'success');
+            }
+
+            assets[assetIndex] = updatedAsset;
+            historyLog.push(historyItem);
+            await apiCreateHistory(historyItem);
+            refreshUI();
+        } catch (err) {
+            console.error(err);
+            showToast("Error al actualizar mantenimiento en MySQL.", "error");
+            await loadInitialData();
             refreshUI();
         }
     }
 };
 
-window.quickToggleMaintenance = function(id, direction) {
+window.quickSignNotebook = async function(id) {
     const assetIndex = assets.findIndex(a => a.id === id);
     if (assetIndex !== -1) {
         const asset = assets[assetIndex];
 
-        if (direction === 'to_maint') {
-            assets[assetIndex] = {
+        try {
+            const updatedAsset = {
                 ...asset,
-                status: 'En Mantenimiento',
-                assignedTo: '',
-                employeeId: '',
-                assignmentLocation: '',
-                assignmentDate: '',
-                returnDate: '',
                 signedDeliveryPaper: true
             };
 
-            // Log
-            historyLog.push({
+            await apiUpdateAsset(updatedAsset);
+
+            const historyItem = {
                 id: 'h-' + Date.now(),
                 notebookId: id,
                 brandModel: asset.brandModel,
                 serialNumber: asset.serialNumber,
-                action: 'Mantenimiento',
-                details: `Enviado a servicio de reparación / mantenimiento.`,
+                action: 'Firma Conformada',
+                details: `Firma de papel de entrega conformada para el asesor ${asset.assignedTo}.`,
                 timestamp: getFormattedTimestamp(),
-                status: 'En Mantenimiento'
-            });
-
-            showToast(`Activo S/N ${asset.serialNumber} enviado a mantenimiento.`, 'warning');
-        } else if (direction === 'from_maint') {
-            assets[assetIndex] = {
-                ...asset,
-                status: 'Disponible'
+                status: 'Asignado'
             };
 
-            // Log
-            historyLog.push({
-                id: 'h-' + Date.now(),
-                notebookId: id,
-                brandModel: asset.brandModel,
-                serialNumber: asset.serialNumber,
-                action: 'Devolución',
-                details: `Reincorporado desde taller técnico a stock disponible.`,
-                timestamp: getFormattedTimestamp(),
-                status: 'Disponible'
-            });
+            assets[assetIndex] = updatedAsset;
+            historyLog.push(historyItem);
+            await apiCreateHistory(historyItem);
 
-            showToast(`Activo reincorporado a stock disponible.`, 'success');
+            showToast(`Firma de entrega para ${asset.assignedTo} registrada correctamente.`, 'success');
+            refreshUI();
+        } catch (err) {
+            console.error(err);
+            showToast("Error al registrar la firma en MySQL.", "error");
+            await loadInitialData();
+            refreshUI();
         }
-
-        refreshUI();
-    }
-};
-
-window.quickSignNotebook = function(id) {
-    const assetIndex = assets.findIndex(a => a.id === id);
-    if (assetIndex !== -1) {
-        const asset = assets[assetIndex];
-
-        assets[assetIndex] = {
-            ...asset,
-            signedDeliveryPaper: true
-        };
-
-        // Log
-        historyLog.push({
-            id: 'h-' + Date.now(),
-            notebookId: id,
-            brandModel: asset.brandModel,
-            serialNumber: asset.serialNumber,
-            action: 'Firma Conformada',
-            details: `Firma de papel de entrega conformada para el asesor ${asset.assignedTo}.`,
-            timestamp: getFormattedTimestamp(),
-            status: 'Asignado'
-        });
-
-        showToast(`Firma de entrega para ${asset.assignedTo} registrada correctamente.`, 'success');
-        refreshUI();
     }
 };
 
@@ -1839,7 +1983,7 @@ window.importData = function(event) {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const imported = JSON.parse(e.target.result);
             
@@ -1852,7 +1996,6 @@ window.importData = function(event) {
             // Normalise legacy objects
             let normalizedAssets = [];
             if (imported.notebooks) {
-                // Legacy support
                 normalizedAssets = imported.notebooks.map(nb => {
                     return {
                         id: nb.id,
@@ -1871,18 +2014,34 @@ window.importData = function(event) {
                         signedDeliveryPaper: true,
                         dateAdded: nb.dateAdded || new Date().toISOString().split('T')[0],
                         notes: nb.notes || ''
-                    };
+                      };
                 });
             } else if (imported.assets) {
                 normalizedAssets = imported.assets;
             }
 
-            if (confirm(`Se importarán ${normalizedAssets.length} activos y ${imported.historyLog.length} registros del historial. ¿Deseas sobreescribir el stock actual?`)) {
-                assets = normalizedAssets;
-                historyLog = imported.historyLog;
-                
-                showToast('Importación del sistema completada.', 'success');
-                refreshUI();
+            if (confirm(`Se importarán ${normalizedAssets.length} activos y ${imported.historyLog.length} registros del historial. ¿Deseas sobreescribir el stock actual en la base de datos MySQL?`)) {
+                try {
+                    const response = await fetch(`${API_URL}/import`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            assets: normalizedAssets,
+                            historyLog: imported.historyLog
+                        })
+                    });
+                    
+                    if (!response.ok) throw new Error("Fallo al realizar importación masiva en el backend");
+                    
+                    assets = normalizedAssets;
+                    historyLog = imported.historyLog;
+                    
+                    showToast('Importación masiva en MySQL completada.', 'success');
+                    refreshUI();
+                } catch (err) {
+                    console.error(err);
+                    showToast("Error al importar datos en el servidor MySQL.", "error");
+                }
             }
         } catch (err) {
             showToast('Error al procesar el archivo JSON.', 'error');
@@ -2348,7 +2507,7 @@ function handleScannedCode(code) {
 // ====================================================
 // INTERACTIVE STATUS CHANGE FROM DETAILS
 // ====================================================
-window.changeAssetStatusFromDetails = function(id, newStatus) {
+window.changeAssetStatusFromDetails = async function(id, newStatus) {
     const assetIndex = assets.findIndex(a => a.id === id);
     if (assetIndex === -1) return;
 
@@ -2362,38 +2521,50 @@ window.changeAssetStatusFromDetails = function(id, newStatus) {
         }, 300);
     } else if (newStatus === 'En Mantenimiento') {
         closeDetailsModal();
-        quickToggleMaintenance(id, 'to_maint');
+        await quickToggleMaintenance(id, 'to_maint');
     } else if (newStatus === 'Disponible') {
         closeDetailsModal();
-        quickReturnAsset(id);
+        await quickReturnAsset(id);
     } else if (newStatus === 'Retirado') {
         if (confirm(`¿Confirmas retirar del servicio el activo S/N ${asset.serialNumber}? Se desvinculará de cualquier asignación.`)) {
-            closeDetailsModal();
-            
-            assets[assetIndex] = {
-                ...asset,
-                status: 'Retirado',
-                assignedTo: '',
-                employeeId: '',
-                assignmentLocation: '',
-                assignmentDate: '',
-                returnDate: '',
-                signedDeliveryPaper: true
-            };
+            try {
+                const updatedAsset = {
+                    ...asset,
+                    status: 'Retirado',
+                    assignedTo: '',
+                    employeeId: '',
+                    assignmentLocation: '',
+                    assignmentDate: '',
+                    returnDate: '',
+                    signedDeliveryPaper: true
+                };
 
-            historyLog.push({
-                id: 'h-' + Date.now(),
-                notebookId: id,
-                brandModel: asset.brandModel,
-                serialNumber: asset.serialNumber,
-                action: 'Retiro',
-                details: `Estado modificado a Retirado desde la ficha detallada.`,
-                timestamp: getFormattedTimestamp(),
-                status: 'Retirado'
-            });
+                await apiUpdateAsset(updatedAsset);
 
-            showToast(`Activo S/N ${asset.serialNumber} retirado.`, 'warning');
-            refreshUI();
+                const historyItem = {
+                    id: 'h-' + Date.now(),
+                    notebookId: id,
+                    brandModel: asset.brandModel,
+                    serialNumber: asset.serialNumber,
+                    action: 'Retiro',
+                    details: `Estado modificado a Retirado desde la ficha detallada.`,
+                    timestamp: getFormattedTimestamp(),
+                    status: 'Retirado'
+                };
+
+                assets[assetIndex] = updatedAsset;
+                historyLog.push(historyItem);
+                
+                await apiCreateHistory(historyItem);
+
+                showToast(`Activo S/N ${asset.serialNumber} retirado.`, 'warning');
+                refreshUI();
+            } catch (err) {
+                console.error(err);
+                showToast("Error al retirar el activo de MySQL.", "error");
+                await loadInitialData();
+                refreshUI();
+            }
         } else {
             viewAssetDetails(id);
         }
