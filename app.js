@@ -1678,12 +1678,15 @@ window.viewAssetDetails = function(id) {
                 <span class="details-value"><code>${asset.serialNumber}</code></span>
             </div>
             <div class="details-item">
-                <span class="details-label">Estado de Stock</span>
-                <span class="details-value">
-                    <span class="badge ${asset.status === 'Disponible' ? 'disponible' : asset.status === 'Asignado' ? 'asignado' : asset.status === 'En Mantenimiento' ? 'mantenimiento' : 'retirado'}">
-                        ${asset.status}
-                    </span>
-                </span>
+                <span class="details-label">Estado de Stock (Interactivo)</span>
+                <div style="margin-top: 2px;">
+                    <select class="details-status-select" onchange="changeAssetStatusFromDetails('${asset.id}', this.value)">
+                        <option value="Disponible" ${asset.status === 'Disponible' ? 'selected' : ''}>Disponible</option>
+                        <option value="Asignado" ${asset.status === 'Asignado' ? 'selected' : ''}>Asignado</option>
+                        <option value="En Mantenimiento" ${asset.status === 'En Mantenimiento' ? 'selected' : ''}>En Mantenimiento</option>
+                        <option value="Retirado" ${asset.status === 'Retirado' ? 'selected' : ''}>Retirado</option>
+                    </select>
+                </div>
             </div>
             <div class="details-item">
                 <span class="details-label">Fecha Registro en Sistema</span>
@@ -1716,6 +1719,16 @@ window.viewAssetDetails = function(id) {
                 <span class="details-label">Observaciones y Notas Generales</span>
                 <textarea readonly rows="2">${asset.notes || 'Sin observaciones registradas.'}</textarea>
             </div>
+
+            <div class="details-full details-qr-wrapper">
+                <span class="details-label">Código QR Identificador</span>
+                <div id="details-qr-code-box" class="details-qr-code"></div>
+                <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">S/N: ${asset.serialNumber}</span>
+                <button class="btn btn-secondary" onclick="printAssetLabel('${asset.id}')" style="padding: 6px 12px; font-size:0.75rem; display:inline-flex; align-items:center; gap:6px; margin-top:4px;">
+                    <i data-lucide="printer" style="width:13px; height:13px; color:var(--primary);"></i>
+                    <span>Imprimir Etiqueta</span>
+                </button>
+            </div>
         </div>
         <div style="margin-top:15px; border-top: 1px solid var(--border-color); padding-top:12px;">
             <h4 style="font-size:0.8rem; font-weight:600; color:var(--primary); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Auditoría del Activo</h4>
@@ -1724,6 +1737,21 @@ window.viewAssetDetails = function(id) {
     `;
 
     document.getElementById('details-modal').classList.add('active');
+
+    // Render QR Code dynamically after element is added to DOM
+    const qrBox = document.getElementById('details-qr-code-box');
+    if (qrBox) {
+        qrBox.innerHTML = '';
+        new QRCode(qrBox, {
+            text: asset.serialNumber,
+            width: 100,
+            height: 100,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    }
+
     lucide.createIcons();
 };
 
@@ -2147,4 +2175,269 @@ window.renderNotificationsDropdown = function() {
     });
 
     lucide.createIcons();
+};
+
+// ====================================================
+// WEBCAM QR/BARCODE SCANNER LOGIC
+// ====================================================
+let html5QrScanner = null;
+let isScannerRunning = false;
+
+window.openScannerModal = function() {
+    const modal = document.getElementById('scanner-modal');
+    if (!modal) return;
+    modal.classList.add('active');
+    
+    // Clear camera select dropdown
+    const select = document.getElementById('scanner-camera-select');
+    select.innerHTML = '<option value="">Cargando cámara...</option>';
+    
+    if (!html5QrScanner) {
+        try {
+            html5QrScanner = new Html5Qrcode("scanner-reader");
+        } catch (e) {
+            console.error("Error al instanciar Html5Qrcode:", e);
+            showToast("No se pudo iniciar el escáner de cámara.", "error");
+            modal.classList.remove('active');
+            return;
+        }
+    }
+    
+    // Start camera stream directly using default facingMode: "environment"
+    // This avoids querying labels beforehand, which locks the camera hardware in some browsers
+    html5QrScanner.start(
+        { facingMode: "environment" },
+        {
+            fps: 10,
+            qrbox: { width: 220, height: 220 }
+        },
+        qrCodeMessage => {
+            handleScannedCode(qrCodeMessage);
+        },
+        () => {
+            // Ignore error callback stream
+        }
+    ).then(() => {
+        isScannerRunning = true;
+        // If the user closed the modal during camera boot, stop it immediately
+        if (!modal.classList.contains('active')) {
+            html5QrScanner.stop().then(() => {
+                isScannerRunning = false;
+            });
+        } else {
+            populateScannerCameras();
+        }
+    }).catch(err => {
+        console.error("Error al iniciar cámara:", err);
+        showToast("Error de acceso a la cámara. Por favor reintente.", "error");
+        closeScannerModal();
+    });
+};
+
+function populateScannerCameras() {
+    const select = document.getElementById('scanner-camera-select');
+    if (!select) return;
+    
+    Html5Qrcode.getCameras().then(devices => {
+        if (devices && devices.length > 0) {
+            select.innerHTML = '';
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.id;
+                option.textContent = device.label || `Cámara ${select.childNodes.length + 1}`;
+                select.appendChild(option);
+            });
+        } else {
+            select.innerHTML = '<option value="">Cámara por defecto</option>';
+        }
+    }).catch(err => {
+        console.warn("No se pudieron listar todas las cámaras:", err);
+        select.innerHTML = '<option value="">Cámara por defecto</option>';
+    });
+}
+
+window.switchScannerCamera = function(cameraId) {
+    if (!cameraId || !html5QrScanner) return;
+    
+    if (isScannerRunning) {
+        html5QrScanner.stop().then(() => {
+            isScannerRunning = false;
+            startScannerStream(cameraId);
+        }).catch(err => {
+            console.error("Error al pausar stream para cambio de cámara:", err);
+            startScannerStream(cameraId);
+        });
+    } else {
+        startScannerStream(cameraId);
+    }
+};
+
+function startScannerStream(cameraId) {
+    html5QrScanner.start(
+        cameraId,
+        {
+            fps: 10,
+            qrbox: { width: 220, height: 220 }
+        },
+        qrCodeMessage => {
+            handleScannedCode(qrCodeMessage);
+        },
+        () => {
+            // Ignore error callback stream
+        }
+    ).then(() => {
+        isScannerRunning = true;
+    }).catch(err => {
+        console.error("Error al iniciar cámara elegida:", err);
+        showToast("No se pudo iniciar la cámara seleccionada.", "error");
+    });
+}
+
+window.closeScannerModal = function() {
+    const modal = document.getElementById('scanner-modal');
+    if (modal) modal.classList.remove('active');
+    
+    if (html5QrScanner && isScannerRunning) {
+        html5QrScanner.stop().then(() => {
+            isScannerRunning = false;
+        }).catch(err => {
+            console.error("Error al apagar cámara:", err);
+            isScannerRunning = false;
+        });
+    }
+};
+
+function playScannerBeep() {
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 1000;
+        gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.12);
+    } catch (err) {
+        console.warn("Web Audio API no soportada por el navegador.", err);
+    }
+}
+
+function handleScannedCode(code) {
+    const cleanCode = code.trim().toUpperCase();
+    playScannerBeep();
+    
+    const asset = assets.find(a => a.serialNumber === cleanCode);
+    
+    if (asset) {
+        closeScannerModal();
+        showToast(`Activo Escaneado: ${asset.brandModel} (S/N: ${asset.serialNumber})`, 'success');
+        
+        setTimeout(() => {
+            viewAssetDetails(asset.id);
+        }, 400);
+    } else {
+        showToast(`Código: "${cleanCode}" no coincide con ningún activo.`, 'warning');
+    }
+}
+
+// ====================================================
+// INTERACTIVE STATUS CHANGE FROM DETAILS
+// ====================================================
+window.changeAssetStatusFromDetails = function(id, newStatus) {
+    const assetIndex = assets.findIndex(a => a.id === id);
+    if (assetIndex === -1) return;
+
+    const asset = assets[assetIndex];
+    if (asset.status === newStatus) return;
+
+    if (newStatus === 'Asignado') {
+        closeDetailsModal();
+        setTimeout(() => {
+            openAssignModal(id);
+        }, 300);
+    } else if (newStatus === 'En Mantenimiento') {
+        closeDetailsModal();
+        quickToggleMaintenance(id, 'to_maint');
+    } else if (newStatus === 'Disponible') {
+        closeDetailsModal();
+        quickReturnAsset(id);
+    } else if (newStatus === 'Retirado') {
+        if (confirm(`¿Confirmas retirar del servicio el activo S/N ${asset.serialNumber}? Se desvinculará de cualquier asignación.`)) {
+            closeDetailsModal();
+            
+            assets[assetIndex] = {
+                ...asset,
+                status: 'Retirado',
+                assignedTo: '',
+                employeeId: '',
+                assignmentLocation: '',
+                assignmentDate: '',
+                returnDate: '',
+                signedDeliveryPaper: true
+            };
+
+            historyLog.push({
+                id: 'h-' + Date.now(),
+                notebookId: id,
+                brandModel: asset.brandModel,
+                serialNumber: asset.serialNumber,
+                action: 'Retiro',
+                details: `Estado modificado a Retirado desde la ficha detallada.`,
+                timestamp: getFormattedTimestamp(),
+                status: 'Retirado'
+            });
+
+            showToast(`Activo S/N ${asset.serialNumber} retirado.`, 'warning');
+            refreshUI();
+        } else {
+            viewAssetDetails(id);
+        }
+    }
+};
+
+// ====================================================
+// ASSET THERMAL LABEL PRINTING
+// ====================================================
+window.printAssetLabel = function(id) {
+    const asset = assets.find(a => a.id === id);
+    if (!asset) return;
+
+    // Create printer container
+    const printContainer = document.createElement('div');
+    printContainer.id = 'print-label-container';
+    
+    const labelCard = document.createElement('div');
+    labelCard.className = 'print-label-card';
+    
+    labelCard.innerHTML = `
+        <div class="print-label-header">Control de Activos IT</div>
+        <div class="print-label-model">${asset.brandModel}</div>
+        <div class="print-label-qr-box" id="print-label-qr-target"></div>
+        <div class="print-label-sn-text">Número de Serie</div>
+        <div class="print-label-sn">${asset.serialNumber}</div>
+    `;
+    
+    printContainer.appendChild(labelCard);
+    document.body.appendChild(printContainer);
+
+    // Build the QR code inside the label container
+    new QRCode(document.getElementById('print-label-qr-target'), {
+        text: asset.serialNumber,
+        width: 130,
+        height: 130,
+        colorDark : "#000000",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+    });
+
+    // Wait for the QR rendering engine to load image before invoking print
+    setTimeout(() => {
+        window.print();
+        document.body.removeChild(printContainer);
+    }, 500);
 };

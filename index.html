@@ -11,6 +11,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- QR Code Generator & Webcam Scanner CDNs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -57,7 +60,10 @@
             <header class="top-header">
                 <div class="search-bar-container">
                     <i data-lucide="search" class="search-icon"></i>
-                    <input type="text" id="global-search" placeholder="Buscar por modelo, número de serie o empleado..." oninput="handleSearch(this.value)">
+                    <input type="text" id="global-search" placeholder="Buscar por modelo, número de serie o empleado..." oninput="handleSearch(this.value)" style="padding-right: 46px;">
+                    <button class="search-scan-btn" id="btn-scan-qr" onclick="openScannerModal()" title="Escanear Código QR o de Barras" type="button">
+                        <i data-lucide="qr-code"></i>
+                    </button>
                 </div>
                 <div class="header-actions">
                     <div class="system-time" id="system-time">
@@ -512,6 +518,33 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" onclick="closeDetailsModal()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WEBCAM QR/BARCODE SCANNER MODAL -->
+    <div id="scanner-modal" class="modal-overlay">
+        <div class="modal-box glass-panel animated-modal" style="width: 480px;">
+            <div class="modal-header">
+                <h2>Escanear Código de Activo</h2>
+                <button class="modal-close" onclick="closeScannerModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="scanner-container" style="position: relative; overflow: hidden; background: #000; border-radius: var(--radius-md); border: 1px solid var(--border-color); aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center;">
+                <div id="scanner-reader" style="width: 100%; height: 100%; max-height: 360px;"></div>
+                <div class="scanner-laser-line"></div>
+            </div>
+            <div class="scanner-controls" style="margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="scanner-camera-select">Seleccionar Cámara</label>
+                    <select id="scanner-camera-select" onchange="switchScannerCamera(this.value)">
+                        <option value="">Cargando cámaras...</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 5px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeScannerModal()">Cancelar</button>
+                </div>
             </div>
         </div>
     </div>
